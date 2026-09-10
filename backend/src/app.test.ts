@@ -28,6 +28,11 @@ test('published page gives a protected browser session without exposing server s
     const cookie = setCookie.split(';')[0];
     const headers = { cookie, origin: 'https://tutor.example' };
     assert.equal((await app.inject('/api/conversation/status')).statusCode, 401);
+    const stale = '__Host-tutor=expired-before-deployment';
+    assert.equal((await app.inject({ url: '/api/conversation/status', headers: { cookie: stale } })).statusCode, 401);
+    const renewed = await app.inject({ url: '/', headers: { cookie: stale } });
+    const renewedCookie = String(renewed.headers['set-cookie']).split(';')[0];
+    assert.equal((await app.inject({ url: '/api/conversation/status', headers: { cookie: renewedCookie } })).statusCode, 200);
     assert.equal((await app.inject({ url: '/api/conversation/status', headers })).statusCode, 200);
     assert.equal((await app.inject({ method: 'POST', url: '/api/conversation', headers: { cookie, origin: 'https://another.example' } })).statusCode, 403);
     const start = await app.inject({ method: 'POST', url: '/api/conversation', headers });

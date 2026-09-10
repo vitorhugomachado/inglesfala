@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
+import { tutorFetch } from './api';
 import { playSegments, speechSegments, type SpeechSegment } from './speech';
 type Phase = 'idle' | 'starting' | 'listening' | 'thinking' | 'speaking';
 const labels: Record<Phase, string> = { idle: 'Pronto para conversar', starting: 'Preparando sua sessão…', listening: 'Estou ouvindo você', thinking: 'Pensando na sua resposta…', speaking: 'Alex está falando' };
@@ -40,7 +41,11 @@ function App() {
   function end() { cleanup(); setPhase('idle'); setCaption('Até a próxima! Ligue o microfone quando quiser praticar novamente.'); }
   useEffect(() => {
     const abort = new AbortController();
-    fetch('/api/conversation/status', { signal: abort.signal }).then(r => r.json()).then(data => setReady(data.ready === true)).catch(() => {});
+    tutorFetch('/api/conversation/status', { signal: abort.signal }).then(async r => {
+      if (!r.ok) return;
+      const data = await r.json();
+      if (!abort.signal.aborted) setReady(data.ready === true);
+    }).catch(() => {});
     const hide = () => { if (document.hidden && active.current) { cleanup(); setPhase('idle'); setCaption('Sessão encerrada ao sair da tela. Ligue o microfone para retomar.'); } };
     document.addEventListener('visibilitychange', hide);
     return () => { abort.abort(); document.removeEventListener('visibilitychange', hide); cleanup(); };
@@ -50,7 +55,8 @@ function App() {
     controller.current = abort;
     const timeout = setTimeout(() => abort.abort(), 35_000);
     try {
-      const response = await fetch(path, { ...options, signal: abort.signal });
+      const response = await tutorFetch(path, { ...options, signal: abort.signal });
+      if (response.status === 401) throw new Error('Não consegui renovar seu acesso. Atualize a página e tente novamente.');
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Não foi possível conversar com o tutor.');
       return data;
