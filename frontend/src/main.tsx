@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
+import { playSegments, speechSegments, type SpeechSegment } from './speech';
 type Phase = 'idle' | 'starting' | 'listening' | 'thinking' | 'speaking';
 const labels: Record<Phase, string> = { idle: 'Pronto para conversar', starting: 'Preparando sua sessão…', listening: 'Estou ouvindo você', thinking: 'Pensando na sua resposta…', speaking: 'Alex está falando' };
 function App() {
@@ -18,7 +19,7 @@ function App() {
   const frame = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const controller = useRef<AbortController | null>(null);
-  const utterance = useRef<SpeechSynthesisUtterance | null>(null);
+  const stopSpeech = useRef<(() => void) | null>(null);
   function cleanup() {
     active.current = false;
     generation.current++;
@@ -30,8 +31,8 @@ function App() {
     stream.current = null;
     void context.current?.close().catch(() => {});
     context.current = null;
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    utterance.current = null;
+    stopSpeech.current?.();
+    stopSpeech.current = null;
     if (session.current) void fetch('/api/conversation/' + session.current, { method: 'DELETE', keepalive: true }).catch(() => {});
     session.current = '';
   }
@@ -55,23 +56,16 @@ function App() {
       return data;
     } finally { clearTimeout(timeout); }
   }
-  function speak(text: string, turn: number) {
+  function speak(text: string, turn: number, segments: SpeechSegment[] = [{ lang: 'pt-BR', text }]) {
     if (!active.current || turn !== generation.current) return;
     setCaption(text);
     setPhase('speaking');
-    const speech = new SpeechSynthesisUtterance(text);
-    speech.lang = 'en-US';
-    speech.rate = 0.95;
-    speech.voice = speechSynthesis.getVoices().find(v => v.lang === 'en-US') ?? null;
-    utterance.current = speech;
-    speech.onend = () => {
+    stopSpeech.current?.();
+    stopSpeech.current = playSegments(segments, () => {
       if (!active.current || turn !== generation.current) return;
       clearTimeout(timer.current);
       timer.current = setTimeout(() => listen(turn), 350);
-    };
-    speech.onerror = () => { if (active.current && turn === generation.current) fail('Não consegui reproduzir a voz. Confira o áudio e inicie novamente.'); };
-    timer.current = setTimeout(() => { if (active.current && turn === generation.current) fail('A voz travou. Inicie novamente.'); }, 90_000);
-    speechSynthesis.speak(speech);
+    }, () => { if (active.current && turn === generation.current) fail('Não consegui reproduzir a voz. Confira o áudio e inicie novamente.'); });
   }
   async function respond(blob: Blob, turn: number) {
     if (!active.current || turn !== generation.current) return;
@@ -79,7 +73,7 @@ function App() {
     try {
       const data = await api('/api/conversation/' + session.current + '/turn', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
       if (typeof data.reply !== 'string' || !data.reply.trim()) throw new Error('O tutor retornou uma resposta vazia.');
-      speak(data.reply, turn);
+      speak(data.reply, turn, speechSegments(data.segments, data.reply));
     } catch (cause) { if (active.current && turn === generation.current) fail(cause instanceof Error && cause.name !== 'AbortError' ? cause.message : 'A resposta demorou demais. Inicie novamente.'); }
   }
   function listen(turn: number) {
@@ -103,7 +97,7 @@ function App() {
       recording.onerror = () => { if (active.current && turn === generation.current) fail('O microfone parou de responder. Inicie novamente.'); };
       recording.onstop = () => {
         if (!active.current || turn !== generation.current) return;
-        if (voiced < 220) { speak("I'm here. Take your time. Could you say that again?", turn); return; }
+        if (voiced < 220) { speak('Estou aqui, sem pressa. Pode responder com calma?', turn); return; }
         void respond(new Blob(chunks, { type: recording.mimeType }), turn);
       };
       recording.start(250);
@@ -147,7 +141,7 @@ function App() {
       if (typeof data.id !== 'string' || typeof data.reply !== 'string') throw new Error('Resposta inválida do servidor.');
       session.current = data.id;
       setReady(true);
-      speak(data.reply, turn);
+      speak(data.reply, turn, speechSegments(data.segments, data.reply));
     } catch (cause) {
       if (active.current && turn === generation.current) fail(cause instanceof DOMException && cause.name === 'NotAllowedError' ? 'Permita o microfone no navegador para começar.' : cause instanceof Error && cause.name !== 'AbortError' ? cause.message : 'Não foi possível iniciar. Tente novamente.');
     }
@@ -157,7 +151,7 @@ function App() {
     <section className="session" aria-labelledby="title">
       <p className="eyebrow">SEU TUTOR DE INGLÊS</p>
       <h1 id="title">Vamos conversar?</h1>
-      <p className="intro">Ligue o microfone. Alex cuida do resto.</p>
+      <p className="intro">Explicações em português. Prática em inglês.</p>
       <div className={'voice-signal ' + phase} aria-hidden="true">{[0, 1, 2, 3, 4].map(i => <span key={i} style={{ animationDelay: i * 120 + 'ms' }} />)}</div>
       <p className="phase" role="status">{labels[phase]}</p>
       <p className="caption">{caption}</p>

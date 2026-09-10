@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildApp } from './app.js';
+import { parseDialogue } from './dialogue.js';
+
+test('bilingual replies reject invalid or English-only instruction segments', () => {
+  assert.deepEqual(parseDialogue(JSON.stringify({ segments: [{ lang: 'pt-BR', text: 'Repita:' }, { lang: 'en-US', text: 'Good morning.' }] })).map(s => s.lang), ['pt-BR', 'en-US']);
+  for (const value of [{ segments: [] }, { segments: [{ lang: 'en-US', text: 'Explain in English.' }] }, { segments: [{ lang: 'pt-BR', text: '' }] }, { segments: [{ lang: 'fr-FR', text: 'Bonjour' }] }]) {
+    assert.throws(() => parseDialogue(JSON.stringify(value)));
+  }
+});
 
 test('published page gives a protected browser session without exposing server secrets', async () => {
   const previous = { mode: process.env.NODE_ENV, token: process.env.BACKEND_ACCESS_TOKEN, origin: process.env.PUBLIC_APP_ORIGIN, groq: process.env.GROQ_API_KEY };
@@ -75,8 +83,9 @@ test('conversation configuration, contextual turns, provider failure and ending'
     const body = JSON.parse(String(options?.body));
     assert.equal(body.model, 'openai/gpt-oss-20b');
     assert.equal(body.messages.at(-1).content, 'My name is Vitor.');
-    assert.ok(body.messages.some((m: { content: string }) => m.content.includes("I'm Alex")));
-    return Response.json({ choices: [{ message: { content: 'Nice to meet you, Vitor. What do you like to do?' } }] });
+    assert.ok(body.messages.some((m: { content: string }) => m.content.includes('Eu sou o Alex')));
+    assert.equal(body.response_format.json_schema.strict, true);
+    return Response.json({ choices: [{ message: { content: JSON.stringify({ segments: [{ lang: 'pt-BR', text: 'Prazer, Vitor. Para dizer bom dia, repita:' }, { lang: 'en-US', text: 'Good morning.' }, { lang: 'pt-BR', text: 'Agora é sua vez.' }] }) } }] });
   };
   const app = buildApp(mockFetch);
   try {
@@ -91,6 +100,7 @@ test('conversation configuration, contextual turns, provider failure and ending'
     const response = await turn();
     assert.equal(response.statusCode, 200);
     assert.match(response.json().reply, /Vitor/);
+    assert.deepEqual(response.json().segments.map((s: { lang: string }) => s.lang), ['pt-BR', 'en-US', 'pt-BR']);
     assert.equal(calls, 2);
     rejectProvider = true;
     const failed = await turn();
