@@ -40,10 +40,23 @@ export function registerWeb(app: FastifyInstance) {
   return (request: FastifyRequest, reply: FastifyReply): boolean => {
     if (!available || !/^\/api\/conversation(?:\/|$)/.test(request.url.split('?')[0])) return false;
     prune();
-    const visitor = visitors.get(cookieId(request) ?? '');
+    let visitor = visitors.get(cookieId(request) ?? '');
+    const origin = process.env.PUBLIC_APP_ORIGIN || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : undefined);
+    // Older open tabs cannot run the new client-side renewal code. Let the
+    // official page renew the same public guest access when starting practice.
+    const starting = request.method === 'POST' && request.url.split('?')[0] === '/api/conversation';
+    if (!visitor && starting && origin && request.headers.origin === origin) {
+      if (visitors.size >= 200) {
+        reply.code(503).send({ message: 'O tutor está ocupado. Tente novamente em alguns minutos.' });
+        return true;
+      }
+      const id = randomUUID();
+      visitor = { expires: Date.now() + 3_600_000, turns: 0, sessions: 0 };
+      visitors.set(id, visitor);
+      reply.header('Set-Cookie', `${cookieName}=${id}; HttpOnly; SameSite=Strict; Path=/; Max-Age=3600${secure ? '; Secure' : ''}`);
+    }
     if (!visitor) return false;
     if (!['GET', 'HEAD'].includes(request.method)) {
-      const origin = process.env.PUBLIC_APP_ORIGIN || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : undefined);
       if (!origin || request.headers.origin !== origin) {
         reply.code(403).send({ message: 'Abra a conversa pelo domínio oficial do tutor.' });
         return true;

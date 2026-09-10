@@ -33,6 +33,13 @@ test('published page gives a protected browser session without exposing server s
     const renewed = await app.inject({ url: '/', headers: { cookie: stale } });
     const renewedCookie = String(renewed.headers['set-cookie']).split(';')[0];
     assert.equal((await app.inject({ url: '/api/conversation/status', headers: { cookie: renewedCookie } })).statusCode, 200);
+    const oldTab = await app.inject({ method: 'POST', url: '/api/conversation', headers: { cookie: stale, origin: 'https://tutor.example' } });
+    assert.equal(oldTab.statusCode, 200);
+    assert.match(String(oldTab.headers['set-cookie']), /HttpOnly; SameSite=Strict/);
+    const oldTabCookie = String(oldTab.headers['set-cookie']).split(';')[0];
+    assert.equal((await app.inject({ url: '/api/conversation/status', headers: { cookie: oldTabCookie } })).statusCode, 200);
+    assert.equal((await app.inject({ method: 'POST', url: '/api/conversation', headers: { cookie: stale, origin: 'https://another.example' } })).statusCode, 401);
+    assert.equal((await app.inject({ method: 'POST', url: '/api/conversation', headers: { cookie: stale } })).statusCode, 401);
     assert.equal((await app.inject({ url: '/api/conversation/status', headers })).statusCode, 200);
     assert.equal((await app.inject({ method: 'POST', url: '/api/conversation', headers: { cookie, origin: 'https://another.example' } })).statusCode, 403);
     const start = await app.inject({ method: 'POST', url: '/api/conversation', headers });
