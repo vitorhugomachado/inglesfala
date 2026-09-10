@@ -49,13 +49,22 @@ Teste manual: permitir e negar microfone; conversar por três turnos; fazer paus
 
 Referências: https://console.groq.com/docs/speech-to-text e https://console.groq.com/docs/api-reference.
 
-## Railway — estrutura preparada
+## Railway — backend publicado
 
 Projeto: voice-english-tutor (9f662fb7-8199-46c4-8a7b-8535e3c083e1).
 Serviço: tutor-api (53a08f67-23c2-4aec-8b2c-25054561e4c3).
 
 Dockerfile com Node 24, compilação TypeScript e execução como usuário não-root. railway.json define /health, uma réplica e reinício por falha. O pacote de deploy é montado por lista explícita de arquivos em work/railway-deploy, fora desta pasta, sem .env ou credenciais.
 
-Em produção são obrigatórias GROQ_API_KEY e BACKEND_ACCESS_TOKEN. A API exige o cabeçalho x-backend-token; /health permanece público. O proxy Vite suporta BACKEND_URL e BACKEND_ACCESS_TOKEN em frontend/.env.local (valores apenas do servidor, não expostos por VITE_). Nenhuma variável secreta foi enviada à Railway até este ponto: aguardando autorização específica solicitada pela revisão automática. O deploy ainda não foi realizado.
+Em produção são obrigatórias GROQ_API_KEY e BACKEND_ACCESS_TOKEN. A API exige o cabeçalho x-backend-token; /health permanece público. O proxy Vite suporta BACKEND_URL e BACKEND_ACCESS_TOKEN em frontend/.env.local (valores apenas do servidor, não expostos por VITE_). As credenciais foram configuradas nas variáveis Railway com autorização do proprietário. O deploy foi concluído e o healthcheck validado. Nenhum segredo é versionado no GitHub.
 
 As sessões continuam em memória, sem banco de dados. Uma nova implantação encerra as sessões existentes. A credencial do proxy restringe o MVP ao frontend local; autenticação de usuários e limites de consumo ainda serão necessários antes de disponibilizar o frontend ao público.
+
+
+Repositório: https://github.com/vitorhugomachado/inglesfala (branch main).
+Backend: https://tutor-api-production-088a.up.railway.app
+Healthcheck público: https://tutor-api-production-088a.up.railway.app/health
+
+A Railway está conectada ao GitHub e acompanha main. O frontend permanece local em http://127.0.0.1:5173; seu proxy lê o endereço Railway e a credencial de frontend/.env.local. Em outro computador, configure esses valores localmente. A URL do backend não serve a interface.
+
+Validação publicada: healthcheck 200, API sem token 401, API com token 200 e criação/encerramento de sessão 200. Testes automatizados usam provedor simulado; a conversa com áudio real ainda deve ser validada pelo aluno.
