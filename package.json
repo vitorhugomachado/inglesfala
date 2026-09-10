@@ -1,0 +1,1 @@
+{"name":"voice-tutor","private":true,"workspaces":["frontend","backend"],"scripts":{"dev":"concurrently -k -n web,api \"npm run dev -w frontend\" \"npm run dev -w backend\"","build":"npm run build --workspaces","test":"npm run test -w backend"},"devDependencies":{"concurrently":"^9.2.1"},"engines":{"node":">=22.12.0"}}
