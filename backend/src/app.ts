@@ -1,13 +1,16 @@
 import Fastify from 'fastify';
 import { registerConversation } from './conversation.js';
 import { timingSafeEqual } from 'node:crypto';
+import { registerWeb } from './web.js';
 
 export function buildApp(requestProvider: typeof fetch = fetch) {
   const app = Fastify({ logger: true });
+  const browserAccess = registerWeb(app);
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/')) return;
     reply.header('Cache-Control', 'no-store');
     const expected = process.env.BACKEND_ACCESS_TOKEN;
+    if (browserAccess(request, reply)) return;
     if (!expected && process.env.NODE_ENV !== 'production') return;
     const supplied = request.headers['x-backend-token'];
     if (!expected || typeof supplied !== 'string' || Buffer.byteLength(supplied) !== Buffer.byteLength(expected) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) {

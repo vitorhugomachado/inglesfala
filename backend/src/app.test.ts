@@ -2,6 +2,42 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildApp } from './app.js';
 
+test('published page gives a protected browser session without exposing server secrets', async () => {
+  const previous = { mode: process.env.NODE_ENV, token: process.env.BACKEND_ACCESS_TOKEN, origin: process.env.PUBLIC_APP_ORIGIN, groq: process.env.GROQ_API_KEY };
+  process.env.NODE_ENV = 'production';
+  process.env.BACKEND_ACCESS_TOKEN = 'private-server-token';
+  process.env.GROQ_API_KEY = 'test-key';
+  process.env.PUBLIC_APP_ORIGIN = 'https://tutor.example';
+  const app = buildApp();
+  try {
+    const page = await app.inject('/');
+    assert.equal(page.statusCode, 200);
+    assert.match(page.body, /<div id="root">/);
+    assert.ok(!page.body.includes('private-server-token'));
+    const setCookie = String(page.headers['set-cookie']);
+    assert.match(setCookie, /HttpOnly; SameSite=Strict/);
+    assert.match(setCookie, /Secure/);
+    const cookie = setCookie.split(';')[0];
+    const headers = { cookie, origin: 'https://tutor.example' };
+    assert.equal((await app.inject('/api/conversation/status')).statusCode, 401);
+    assert.equal((await app.inject({ url: '/api/conversation/status', headers })).statusCode, 200);
+    assert.equal((await app.inject({ method: 'POST', url: '/api/conversation', headers: { cookie, origin: 'https://another.example' } })).statusCode, 403);
+    const start = await app.inject({ method: 'POST', url: '/api/conversation', headers });
+    assert.equal(start.statusCode, 200);
+    assert.equal((await app.inject({ method: 'DELETE', url: `/api/conversation/${start.json().id}`, headers })).statusCode, 200);
+    assert.equal((await app.inject({ method: 'POST', url: '/api/recordings', headers })).statusCode, 401);
+    assert.ok([403, 404].includes((await app.inject('/.env')).statusCode));
+    assert.ok([403, 404].includes((await app.inject('/backend/.env')).statusCode));
+    for (let index = 0; index < 9; index++) assert.equal((await app.inject({ method: 'POST', url: '/api/conversation', headers })).statusCode, 200);
+    assert.equal((await app.inject({ method: 'POST', url: '/api/conversation', headers })).statusCode, 429);
+  } finally {
+    for (const [name, value] of Object.entries({ NODE_ENV: previous.mode, BACKEND_ACCESS_TOKEN: previous.token, PUBLIC_APP_ORIGIN: previous.origin, GROQ_API_KEY: previous.groq })) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+    await app.close();
+  }
+});
+
 test('production API requires server credential but healthcheck stays public', async () => {
   const originalEnv = process.env.NODE_ENV;
   const originalToken = process.env.BACKEND_ACCESS_TOKEN;
